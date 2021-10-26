@@ -1,56 +1,51 @@
-try:
+from airflow import DAG
+from airflow.operators import PythonOperator, BranchPythonOperator
+from airflow.operators.bash import BashOperator
+from random import randint
+from datetime import datetime
 
-    from datetime import timedelta
-    from airflow import DAG
-    from airflow.operators.python_operator import PythonOperator
-    from datetime import datetime
-    print('All good')
-
-except Exception as e:
-    print("Error {}".format(e))
+def _training_model():
+    return randint(1,10)
 
 
-
-def t1(**context):
-    print("t1 ")
-    context['ti'].xcom_push(key='mykey', value="t1")
-
-
-def t2(**context):
-    instance = context.get("ti").xcom_pull(key="mykey")
-    data = [{"name":"Tris","title":"Data Science"}, { "name":"King","title":"Product Designer"},]
-    df = pd.DataFrame(data=data)
-    print('@'*66)
-    print(df.head())
-    print('@'*66)
-
-    print("I am in t2 got value :{} from Function 1  ".format(instance))
-
+def _choose_best(ti):
+    acc = ti.xcom_pull(task_ids=['training_A', 'training_B', 'training_C'])
+    best_accuracy = max(acc)
+    if best_accuracy > 8:
+        return 'accurate'
+    else:
+        return 'innacurate'
 
 
 with DAG(
-    dag_id="dag",
+    id="dag", 
+    start_date=datetime(2021,1,1), 
     schedule_interval="@daily",
-    default_args={
-        "owner": "airflow",
-        "retries": 1,
-        "retry_delay": timedelta(minutes=5),
-        "start_date": datetime(2021,1,1),
-    },
-    catchup=False) as f:
+    catchup=False
+    ) as dag:
+        training_A = PythonOperator(
+            task_id="training_A",
+            python_callable=_training_model
+        )
+        training_B = PythonOperator(
+            task_id="training_B",
+            python_callable=_training_model
+        )
+        training_C = PythonOperator(
+            task_id="training_C",
+            python_callable=_training_model
+        )
+        choose_best = BranchPythonOperator(
+            task_id="choose_best",
+            python_callable=_choose_best
+        )
+        accurate = BashOperator(
+            task_id="accurate",
+            bash_command="echo 'accurate'"
+        )
+        innaccurate = BashOperator(
+            task_id="accurate",
+            bash_command="echo 'innaccurate'"
+        )
 
-    t1 = PythonOperator(
-    task_id="t1",
-    python_callable=t1,
-    provide_context=True,
-    op_kwargs={"name":"Soumil"}
-    )
-
-    t2 = PythonOperator(
-        task_id="t1",
-        python_callable=t2,
-        provide_context=True,
-    )
-
-t1 >> t2 
-
+        [training_A, training_B, training_C] >> choose_best >> [accurate, innaccurate]
